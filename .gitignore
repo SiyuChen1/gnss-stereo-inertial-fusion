@@ -92,3 +92,5 @@ borrar/*
 
 */ExecMean.txt
 log*txt
+
+output/

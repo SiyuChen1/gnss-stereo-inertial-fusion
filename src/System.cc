@@ -1013,6 +1013,14 @@ void System::SaveTrajectoryEuRoC(const string &filename, Map* pMap)
 
         if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
         {
+            // Sophus::SE3f Twb = ( pKF->mImuCalib.mTbc   // T_body→cam
+            //         * (*lit)               // T_cam→world_rel
+            //         * Trw )                // T_world_rel→world_new
+            //             .inverse();        // → T_world_new→body
+            
+            // // Then get T_world→cam by chaining on the cam extrinsics:
+            // Sophus::SE3f Twc = Twb * pKF->mImuCalib.mTbc; // T_world→body * T_body→cam
+            
             Sophus::SE3f Twb = (pKF->mImuCalib.mTbc * (*lit) * Trw).inverse();
             Eigen::Quaternionf q = Twb.unit_quaternion();
             Eigen::Vector3f twb = Twb.translation();

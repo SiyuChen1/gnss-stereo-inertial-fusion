@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 2.4.6)
+
+# # locate Python3
+# find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# # make rosbuild use Python3
+# set(ENV{ROS_PYTHON} ${Python3_EXECUTABLE})
+# message(${Python3_EXECUTABLE})
+
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
 rosbuild_init()

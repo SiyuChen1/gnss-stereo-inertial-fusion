@@ -68,6 +68,8 @@ public:
 
     };
     void GrabGps(const sensor_msgs::NavSatFixConstPtr &gps_msg);
+    // Only for Euroc dataset
+    // The ground truth is stored in topic: /vicon/firefly_sbx/firefly_sbx
     void GrabVicon(const geometry_msgs::TransformStampedConstPtr &transform_msg);
     void SaveMeasurement(const ORB_SLAM3::GlobalPosition::GlobalPosition*);
     void ClearMeasurements();
@@ -142,10 +144,17 @@ int main(int argc, char **argv)
   bool bEqual = false;
   if(argc < 4 || argc > 5)
   {
+    // argv[0]: program
+    // argv[1]: vocabulary
+    // argv[2]: Settings
+    // argv[3]: do rectify
+    // argv[4]: do equalization
     cerr << endl << "Usage: rosrun ORB_SLAM3 Stereo_Inertial path_to_vocabulary path_to_settings do_rectify [do_equalize]" << endl;
     ros::shutdown();
     return 1;
   }
+  for(int i = 0; i < 4; i++)
+    std::cout << argv[i] << std::endl;
 
   std::string sbRect(argv[3]);
   if(argc==5)
@@ -229,6 +238,8 @@ int main(int argc, char **argv)
 void ImageGrabber::GrabImageLeft(const sensor_msgs::ImageConstPtr &img_msg)
 {
   mBufMutexLeft.lock();
+  // it enforces a buffer of size one, always keeping only the most recent image.
+  // Real-time processing constraint
   if (!imgLeftBuf.empty())
     imgLeftBuf.pop();
   imgLeftBuf.push(img_msg);
@@ -238,6 +249,8 @@ void ImageGrabber::GrabImageLeft(const sensor_msgs::ImageConstPtr &img_msg)
 void ImageGrabber::GrabImageRight(const sensor_msgs::ImageConstPtr &img_msg)
 {
   mBufMutexRight.lock();
+  // it enforces a buffer of size one, always keeping only the most recent image.
+  // Real-time processing constraint
   if (!imgRightBuf.empty())
     imgRightBuf.pop();
   imgRightBuf.push(img_msg);
@@ -278,6 +291,12 @@ void ImageGrabber::SyncWithImu()
   {
     cv::Mat imLeft, imRight;
     double tImLeft = 0, tImRight = 0;
+    // In short, under your current configuration of callback function
+    // you’ll almost always see imgRightBuf.size()==1 and imgLeftBuf.size()==1
+    // so the while(…pop()…) bodies never execute. 
+    // They remain there as a defensive guard against any scenario where the queues 
+    // might get a little larger (race-windows, changed buffering strategy, etc.) 
+    // and you still want to align timestamps within that 10 ms tolerance.
     if (!imgLeftBuf.empty()&&!imgRightBuf.empty()&&!mpImuGb->imuBuf.empty())
     {
       tImLeft = imgLeftBuf.front()->header.stamp.toSec();
