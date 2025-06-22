@@ -91,13 +91,13 @@ ${PROJECT_SOURCE_DIR}/../../../lib/libGNSS_SI.so
 #)
 
 # Node for stereo camera
-#rosbuild_add_executable(Stereo
-#src/ros_stereo.cc
-#)
+rosbuild_add_executable(Stereo
+src/ros_stereo.cc
+)
 
-#target_link_libraries(Stereo
-#${LIBS}
-#)
+target_link_libraries(Stereo
+${LIBS}
+)
 
 # Node for RGB-D camera
 #rosbuild_add_executable(RGBD
@@ -132,6 +132,15 @@ src/ros_gnss_stereo_inertial.cc
 )
 
 target_link_libraries(GNSS_Stereo_Inertial
+${LIBS}
+)
+
+# Node for gnss-stereo-inertial camera
+rosbuild_add_executable(GNSS_Stereo
+src/ros_gnss_stereo.cc
+)
+
+target_link_libraries(GNSS_Stereo
 ${LIBS}
 )
 

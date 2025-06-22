@@ -2848,8 +2848,9 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
 
             optimizer.addEdge(vear[i]);
         }
-        else
-            cout << "ERROR building inertial edge" << endl;
+        else{
+            // cout << "ERROR building inertial edge" << endl;
+        }
     }
 
     // Set MapPoint vertices
@@ -3080,7 +3081,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
     // TODO: Some convergence problems have been detected here
     if((2*err < err_end || isnan(err) || isnan(err_end)) && !bLarge) //bGN)
     {
-        cout << "FAIL LOCAL-INERTIAL BA!!!!" << endl;
+        cout << "in LocalInertialBA: FAIL LOCAL-INERTIAL BA!!!!" << endl;
         return;
     }
 
@@ -3487,8 +3488,9 @@ void Optimizer::LocalInertialBAWithGlobalMeas(KeyFrame *pKF, bool *pbStopFlag, M
 
             optimizer.addEdge(vear[i]);
         }
-        else
-            cout << "ERROR building inertial edge" << endl;
+        else{
+            // cout << "ERROR building inertial edge" << endl;
+        }
     }
 
     // Set MapPoint vertices
@@ -3718,7 +3720,7 @@ void Optimizer::LocalInertialBAWithGlobalMeas(KeyFrame *pKF, bool *pbStopFlag, M
     // TODO: Some convergence problems have been detected here
     if((2*err < err_end || isnan(err) || isnan(err_end)) && !bLarge) //bGN)
     {
-        cout << "FAIL LOCAL-INERTIAL BA!!!!" << endl;
+        cout << "in LocalInertialBAWithGlobalMeas: FAIL LOCAL-INERTIAL BA!!!!" << endl;
         return;
     }
 
@@ -3905,7 +3907,7 @@ void Optimizer::AlignmentRefinement(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, 
     // TODO: Some convergence problems have been detected here
     if((2*err < err_end || isnan(err) || isnan(err_end)) && !bLarge) //bGN)
     {
-        cout << "FAIL LOCAL-INERTIAL BA!!!!" << endl;
+        cout << "in AlignmentRefinement: FAIL LOCAL-INERTIAL BA!!!!" << endl;
         return;
     }
 
@@ -6546,5 +6548,42 @@ void Optimizer::OptimizeEssentialGraph4DoF(Map* pMap, KeyFrame* pLoopKF, KeyFram
     }
     pMap->IncreaseChangeIndex();
 }
+
+void Optimizer::LocalBundleAdjustmentWithGPS(
+    KeyFrame *pKF, bool* pbStopFlag, Map* pMap,
+    int& num_fixedKF, int& num_OptKF, int& num_MPs, int& num_edges,
+    bool bLocalBA, bool bLarge, bool bUseGPSMeas)
+{
+    // cerr << "before LocalBAWithGPS" << endl;
+    // 1) First do the usual stereo (or mono+stereo) local BA:
+    LocalBundleAdjustment(
+        pKF, pbStopFlag, pMap,
+        num_fixedKF, num_OptKF, num_MPs, num_edges
+    );
+
+    // 2) If we requested GPS‐fusion and we have a global‐origin KF with fixes,
+    //    run the small alignment refinement that adds EdgeGlobalMeasurement edges.
+    KeyFrame* kfOrigin = pMap->GetKFRelatedToGlobalOrigin();
+    if (bUseGPSMeas
+        && kfOrigin
+        && kfOrigin->HasGlobalPositionMeas()
+        && kfOrigin->mGlobalMeasCalib.mbIsSet)
+    {
+        // This will internally create a single VertexRotation + GPS edges,
+        // optimize only the poses in the local window plus that rotation,
+        // and then update the map’s global‐frame alignment.
+        AlignmentRefinement(
+            pKF, pbStopFlag, pMap,
+            num_fixedKF, num_OptKF, num_MPs, num_edges,
+            /*alignmentRotationFixed=*/false,
+            /*bLarge=*/bLarge,
+            /*bRecInit=*/false
+        );
+
+
+    }
+    // cerr << "after LocalBAWithGPS" << endl;
+}
+
 
 } //namespace ORB_SLAM

@@ -39,6 +39,7 @@ class GlobalPosition
     public:
         virtual ~GlobalPosition(){}
         virtual Eigen::Vector3d getRelativeFromOrigin(const GlobalPosition& origin) const = 0;
+        virtual Eigen::Vector3d getLLA() const = 0;
         virtual Eigen::MatrixXd getCovariance() const = 0;
         double timestamp;
         int id;
@@ -60,6 +61,9 @@ public:
     Eigen::Matrix3d covariance;
 
     Eigen::Vector3d getRelativeFromOrigin(const GlobalPosition& origin) const override;
+    Eigen::Vector3d getLLA() const override {
+        return Eigen::Vector3d(latitude, longitude, altitude);
+    }
     Eigen::MatrixXd getCovariance() const override;
 
 };
@@ -97,6 +101,12 @@ EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     Eigen::Matrix3d covariance;
     Eigen::Vector3d getRelativeFromOrigin(const GlobalPosition& origin) const override;
     Eigen::MatrixXd getCovariance() const override;
+    Eigen::Vector3d getLLA() const override {
+        // We don’t have true LLA for mocap, so just return the
+        // local position (x,y,z).  Or throw if you prefer.
+        return position;
+    }
+
 
 };
 

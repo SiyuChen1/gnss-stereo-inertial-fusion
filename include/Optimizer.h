@@ -107,6 +107,11 @@ public:
 
     // Optimize using GPS measurements
     void static OptimizeGraphGlobalMeas(Map* pMap);
+    
+    void static LocalBundleAdjustmentWithGPS(
+        KeyFrame *pKF, bool* pbStopFlag, Map* pMap,
+        int& num_fixedKF, int& num_OptKF, int& num_MPs, int& num_edges,
+        bool bLocalBA, bool bLarge, bool bUseGPSMeas);
 
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;

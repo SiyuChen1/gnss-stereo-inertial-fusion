@@ -38,6 +38,8 @@
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
 
+#include <GeographicLib/LocalCartesian.hpp>
+
 namespace ORB_SLAM3
 {
 
@@ -260,7 +262,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
 Sophus::SE3f System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timestamp, const vector<IMU::Point>& vImuMeas, const vector<const GlobalPosition::GlobalPosition*>& vMeas, string filename)
 {
-    if(mSensor!=STEREO && mSensor!=IMU_STEREO)
+    if(mSensor!=STEREO && mSensor!=IMU_STEREO && mSensor!=STEREO_GPS)
     {
         cerr << "ERROR: you called TrackStereo but input sensor was not set to Stereo nor Stereo-Inertial." << endl;
         exit(-1);
@@ -339,9 +341,11 @@ Sophus::SE3f System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, 
 
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;
+    // std::cout << "set up mTrackingState" << std::endl;
     mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
+    // std::cout << "set up mTrackedMapPoints" << std::endl;
     mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
-
+    // std::cout << "set up mTrackedKeyPointsUn" << std::endl;
     return Tcw;
 }
 
@@ -1766,6 +1770,59 @@ string System::CalculateCheckSum(string filename, int type)
     }
 
     return checksum;
+}
+
+void System::SaveGeographicalTrajectory(const string &filename)
+{
+    // 1) Gather all keyframes in time order (from the current Map)
+    Map* pMap = mpAtlas->GetCurrentMap();
+    vector<KeyFrame*> vKFs = pMap->GetAllKeyFrames();
+    sort(vKFs.begin(), vKFs.end(),
+         [](KeyFrame* a, KeyFrame* b){
+           return a->mTimeStamp < b->mTimeStamp;
+         });
+
+    // 2) Open output file
+    ofstream f(filename);
+    if(!f.is_open()) {
+        cerr << "Cannot open " << filename << " for writing\n";
+        return;
+    }
+    f << fixed << setprecision(9);
+
+    // 3) Pull the saved origin & SLAM→ENU transform from the current map
+    auto       oLLA  = pMap->mGeoOriginLLA;       // (lat0, lon0, alt0)
+    Eigen::Matrix3f Rg0w = pMap->GetGlobalVIOAlignment();
+    Eigen::Vector3f  t_g0w = pMap->mT_g0w;
+
+    // 4) Initialize GeographicLib ENU converter with the origin
+    GeographicLib::LocalCartesian geo(oLLA.x(), oLLA.y(), oLLA.z());
+
+    // 5) For each keyframe, map SLAM‐world → ENU → LLA and write out
+    for(KeyFrame* pKF : vKFs)
+    {
+        // a) camera center in SLAM‐world
+        Sophus::SE3f Tcw = pKF->GetPose();
+        Sophus::SE3f Twc = Tcw.inverse();
+        Eigen::Vector3f pw = Twc.translation();  // [X, Y, Z] in SLAM‐world
+
+        // b) to ENU
+        Eigen::Vector3f p_enu = Rg0w * pw + t_g0w;
+        double e = p_enu.x(),
+               n = p_enu.y(),
+               u = p_enu.z();
+
+        // c) to geodetic LLA
+        double lat, lon, alt;
+        geo.Reverse(e, n, u, lat, lon, alt);
+
+        // d) write
+        f << pKF->mTimeStamp << " "
+          << lat  << " " << lon << " " << alt << "\n";
+    }
+
+    f.close();
+    cout << "Geographical trajectory saved to " << filename << "\n";
 }
 
 } //namespace ORB_SLAM

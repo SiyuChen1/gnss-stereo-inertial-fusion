@@ -172,6 +172,11 @@ public:
     std::set<long unsigned int> msOptKFs;
     std::set<long unsigned int> msFixedKFs;
 
+    // [NEW] geodetic origin (latitude, longitude, altitude) of your GPS stream
+    Eigen::Vector3d mGeoOriginLLA = Eigen::Vector3d::Zero();
+    // [NEW] translation component of SLAM→ENU transform
+    Eigen::Vector3f mT_g0w       = Eigen::Vector3f::Zero();
+
 protected:
 
     long unsigned int mnId;

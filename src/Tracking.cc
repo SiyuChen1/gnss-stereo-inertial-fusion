@@ -574,7 +574,7 @@ void Tracking::newParameterLoader(Settings *settings) {
     mK_(0,2) = mpCamera->getParameter(2);
     mK_(1,2) = mpCamera->getParameter(3);
 
-    if((mSensor==System::STEREO || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD) &&
+    if((mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD) &&
         settings->cameraType() == Settings::KannalaBrandt){
         mpCamera2 = settings->camera2();
         mpCamera2 = mpAtlas->AddCamera(mpCamera2);
@@ -584,12 +584,12 @@ void Tracking::newParameterLoader(Settings *settings) {
         mpFrameDrawer->both = true;
     }
 
-    if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD ){
+    if(mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD ){
         mbf = settings->bf();
         mThDepth = settings->b() * settings->thDepth();
     }
 
-    if(mSensor==System::RGBD || mSensor==System::IMU_RGBD){
+    if(mSensor==System::RGBD || mSensor==System::STEREO_GPS || mSensor==System::IMU_RGBD){
         mDepthMapFactor = settings->depthMapFactor();
         if(fabs(mDepthMapFactor)<1e-5)
             mDepthMapFactor=1;
@@ -934,7 +934,7 @@ bool Tracking::ParseCamParamFile(cv::FileStorage &fSettings)
             mK_(1,2) = cy;
         }
 
-        if(mSensor==System::STEREO || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD){
+        if(mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD){
             // Right camera
             // Camera calibration parameters
             cv::FileNode node = fSettings["Camera2.fx"];
@@ -1147,7 +1147,7 @@ bool Tracking::ParseCamParamFile(cv::FileStorage &fSettings)
         std::cerr << "Check an example configuration file with the desired sensor" << std::endl;
     }
 
-    if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD )
+    if(mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD )
     {
         cv::FileNode node = fSettings["Camera.bf"];
         if(!node.empty() && node.isReal())
@@ -1185,7 +1185,7 @@ bool Tracking::ParseCamParamFile(cv::FileStorage &fSettings)
     else
         cout << "- color order: BGR (ignored if grayscale)" << endl;
 
-    if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
+    if(mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
     {
         float fx = mpCamera->getParameter(0);
         cv::FileNode node = fSettings["ThDepth"];
@@ -1299,7 +1299,7 @@ bool Tracking::ParseORBParamFile(cv::FileStorage &fSettings)
 
     mpORBextractorLeft = new ORBextractor(nFeatures,fScaleFactor,nLevels,fIniThFAST,fMinThFAST);
 
-    if(mSensor==System::STEREO || mSensor==System::IMU_STEREO)
+    if(mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::IMU_STEREO)
         mpORBextractorRight = new ORBextractor(nFeatures,fScaleFactor,nLevels,fIniThFAST,fMinThFAST);
 
     if(mSensor==System::MONOCULAR || mSensor==System::IMU_MONOCULAR)
@@ -1503,12 +1503,13 @@ bool Tracking::GetStepByStep()
 
 Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRectRight, const double &timestamp, string filename)
 {
-    //cout << "GrabImageStereo" << endl;
+    // cout << "GrabImageStereo" << endl;
 
     mImGray = imRectLeft;
     cv::Mat imGrayRight = imRectRight;
     mImRight = imRectRight;
 
+    // cout << "Image channels: " << mImGray.channels() << endl;
     if(mImGray.channels()==3)
     {
         //cout << "Image with 3 channels" << endl;
@@ -1538,18 +1539,18 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
         }
     }
 
-    //cout << "Incoming frame creation" << endl;
+    // cout << "Incoming frame creation" << endl;
 
-    if (mSensor == System::STEREO && !mpCamera2)
+    if ((mSensor == System::STEREO || mSensor == System::STEREO_GPS) && !mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpGlobalMeasCalib);
-    else if(mSensor == System::STEREO && mpCamera2)
+    else if((mSensor == System::STEREO || mSensor == System::STEREO_GPS) && mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr,mpGlobalMeasCalib);
     else if(mSensor == System::IMU_STEREO && !mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpGlobalMeasCalib,&mLastFrame,*mpImuCalib);
     else if(mSensor == System::IMU_STEREO && mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr,mpGlobalMeasCalib,&mLastFrame,*mpImuCalib);
 
-    //cout << "Incoming frame ended" << endl;
+    // cout << "Incoming frame ended" << endl;
 
     mCurrentFrame.mNameFile = filename;
     mCurrentFrame.mnDataset = mnNumDataset;
@@ -1559,9 +1560,9 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
     vdStereoMatch_ms.push_back(mCurrentFrame.mTimeStereoMatch);
 #endif
 
-    //cout << "Tracking start" << endl;
+    // cout << "Tracking start" << endl;
     Track();
-    //cout << "Tracking end" << endl;
+    // cout << "Tracking end" << endl;
 
     return mCurrentFrame.GetPose();
 }
@@ -1684,10 +1685,22 @@ void Tracking::GrabGpsData(const GlobalPosition::GlobalPosition* gpsMeasurement)
         std::cout << "DROPPED GNSS MEAS: " << gpsMeasurement->id << std::endl;
     }
 
-    Map* pCurrentMap = mpAtlas->GetCurrentMap();
-    if(pCurrentMap->isImuInitialized() && (GetGlobalFrameAlignmentState() == FIRST_GLOBAL_MEAS_SET || GetGlobalFrameAlignmentState() == ALIGNING))
+    // Map* pCurrentMap = mpAtlas->GetCurrentMap();
+    // if(pCurrentMap->isImuInitialized() && (GetGlobalFrameAlignmentState() == FIRST_GLOBAL_MEAS_SET || GetGlobalFrameAlignmentState() == ALIGNING))
+    // {
+    //     dataToAlign.push_back(gpsMeasurement);        
+    // }
+
+    // 2) Queue for alignment once state >= FIRST_GLOBAL_MEAS_SET
+    bool allowAlign = mpAtlas->GetCurrentMap()->isImuInitialized()
+                   || (mSensor == System::STEREO_GPS);
+
+    auto s = GetGlobalFrameAlignmentState();
+    if( allowAlign &&
+        (s == FIRST_GLOBAL_MEAS_SET || s == ALIGNING) )
     {
-        dataToAlign.push_back(gpsMeasurement);        
+        // std::cout << "First global measurement setting or aligning" << std::endl;
+        dataToAlign.push_back(gpsMeasurement);
     }
 }
 
@@ -1994,7 +2007,7 @@ void Tracking::Track()
 
     if(mState==NOT_INITIALIZED)
     {
-        if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
+        if(mSensor==System::STEREO || mSensor==System::STEREO_GPS || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
         {
             StereoInitialization();
         }

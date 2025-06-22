@@ -96,6 +96,7 @@ public:
         IMU_MONOCULAR=3,
         IMU_STEREO=4,
         IMU_RGBD=5,
+        STEREO_GPS = 6
     };
 
     // File type
@@ -165,6 +166,9 @@ public:
     void SaveKeyFrameTrajectoryEuRoC(const string &filename, Map* pMap);
 
     void SaveTrajectoryCustom(const string &filename);
+
+    // Save in geodetic (lat, lon, alt) using your GPS+stereo alignment
+    void SaveGeographicalTrajectory(const string &filename);
     
     void SaveMapPoints();
 

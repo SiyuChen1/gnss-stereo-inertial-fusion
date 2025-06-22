@@ -135,7 +135,11 @@ void LocalMapping::Run()
                 if(mpAtlas->KeyFramesInMap()>2)
                 {
 
-                    if(mbInertial && mpCurrentKeyFrame->GetMap()->isImuInitialized())
+                    // Treat STEREO_GPS exactly like inertial for the purposes of
+                    bool useIMU = mbInertial && mpCurrentKeyFrame->GetMap()->isImuInitialized();
+                    bool useGPS = (mpTracker->mSensor == System::STEREO_GPS);
+
+                    if(useIMU || useGPS)
                     {
                         float dist = (mpCurrentKeyFrame->mPrevKF->GetCameraCenter() - mpCurrentKeyFrame->GetCameraCenter()).norm() +
                                 (mpCurrentKeyFrame->mPrevKF->mPrevKF->GetCameraCenter() - mpCurrentKeyFrame->mPrevKF->GetCameraCenter()).norm();
@@ -155,24 +159,80 @@ void LocalMapping::Run()
                         }
 
                         bool bLarge = ((mpTracker->GetMatchesInliers()>75)&&mbMonocular)||((mpTracker->GetMatchesInliers()>100)&&!mbMonocular);
-                        if(mpTracker->GetGlobalFrameAlignmentState() == Tracking::FIRST_GLOBAL_MEAS_SET && mpCurrentKeyFrame->GetMap()->GetIniertialBA2())
+                        // std::cout << "mpCurrentKeyFrame->GetMap()->GetIniertialBA2()" << mpCurrentKeyFrame->GetMap()->GetIniertialBA2() << std::endl;
+                        if(mpTracker->GetGlobalFrameAlignmentState() == Tracking::FIRST_GLOBAL_MEAS_SET && (mpCurrentKeyFrame->GetMap()->GetIniertialBA2() || useGPS))
                         {
+                            std::cout << "in FIRST_GLOBAL_MEAS_SET" << std::endl;
                             const GlobalPosition::GlobalPosition *origin = mpCurrentKeyFrame->GetMap()->GetKFRelatedToGlobalOrigin()->GetGlobalPositionMeas()[0];
                             auto framePoses = GetGlobalSensorPoses(mpCurrentKeyFrame->GetMap(),mpCurrentKeyFrame->mGlobalMeasCalib.tbg, origin->timestamp);
+                            // The Umeyama call inside AlignGlobalFrame computes the rigid‐body transform M that 
+                            // best maps your GPS‐ENU positions (the “source”) to your SLAM‐world positions (the “destination”). 
+                            // In other words, for any ENU point p_g, you get the corresponding SLAM‐world p_w by:
+                            // [ p_w ]   [ Rwg0  twg0 ] [ p_g ]
+                            // [  1  ] = [ 0      1   ] [  1  ]
                             Eigen::Matrix4f Twg0 = AlignGlobalFrame(origin, 
                                     mpTracker->GetDataToAlign(),
                                     framePoses);
                             std::cout << "poses to align: " << mpTracker->GetDataToAlign().size() << std::endl;
-                            Rg0w = Twg0.topLeftCorner(3,3).inverse();
-                            mpCurrentKeyFrame->GetMap()->SetGlobalVIOAlignment(Rg0w);
-                            Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());                            
+                            // ——————————————————————————————————————————————————
+                            // [NEW] persist geodetic origin + SLAM→ENU transform
+                            {
+                                Map* pMap = mpCurrentKeyFrame->GetMap();
+                        
+                                // 1) record the GPS origin LLA
+                                // pMap->mGeoOriginLLA = Eigen::Vector3d(
+                                //     origin->latitude,
+                                //     origin->longitude,
+                                //     origin->altitude
+                                // );
+                                pMap->mGeoOriginLLA = origin->getLLA();
+                        
+                                // 2) extract the SE3: GPS-ENU → SLAM-world
+                                Eigen::Matrix3f Rwg0 = Twg0.topLeftCorner<3,3>();
+                                Eigen::Vector3f twg0 = Twg0.topRightCorner<3,1>();
+                        
+                                // invert to get SLAM-world → GPS-ENU:
+                                Eigen::Matrix3f Rg0w = Rwg0.transpose();
+                                Eigen::Vector3f t_g0w = -Rg0w * twg0;
+                        
+                                // store both
+                                pMap->SetGlobalVIOAlignment(Rg0w);
+                                pMap->mT_g0w = t_g0w;
+                            }
+                            // ——————————————————————————————————————————————————
+
+                            // Rg0w =e Twg0.topLeftCorner(3,3).invers();
+                            // mpCurrentKeyFrame->GetMap()->SetGlobalVIOAlignment(Rg0w);
+                            if (useGPS){
+                                // local stereo+GNSS BA
+                                Optimizer::LocalBundleAdjustmentWithGPS(
+                                    mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),
+                                    num_FixedKF_BA, num_OptKF_BA, num_MPs_BA, num_edges_BA,
+                                    /*bLocalBA=*/true,
+                                    /*bLarge=*/bLarge,
+                                    /*bUseGPSMeas=*/true
+                                );
+                            }else{
+                                Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                            }                    
                             mpTracker->SetGlobalFrameAlignmentState(Tracking::ALIGNING);
                         }
                         else if(mpTracker->GetGlobalFrameAlignmentState() == Tracking::ALIGNING)
                         {
-                            //Optimizer::LocalInertialBAWithGlobalMeas(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, false, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
-                            Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
-                            Optimizer::AlignmentRefinement(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, false, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                            std::cout << "in ALIGNING" << std::endl;
+                            if (useGPS){
+                                Optimizer::LocalBundleAdjustmentWithGPS(
+                                    mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),
+                                    num_FixedKF_BA, num_OptKF_BA, num_MPs_BA, num_edges_BA,
+                                    /*bLocalBA=*/true,
+                                    /*bLarge=*/bLarge,
+                                    /*bUseGPSMeas=*/true
+                                );
+                            }else{
+                                //Optimizer::LocalInertialBAWithGlobalMeas(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, false, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                                Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                                Optimizer::AlignmentRefinement(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, false, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                            }
                             if(mpTracker->GetDataToAlign().size() > 20)
                             {
                                 std::cout << "ALIGNED!" << std::endl;
@@ -180,9 +240,30 @@ void LocalMapping::Run()
                             }
                         }
                         else if(mpTracker->GetGlobalFrameAlignmentState() == Tracking::ALIGNED)
-                            Optimizer::LocalInertialBAWithGlobalMeas(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, true, true, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
-                        else
-                            Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                            {
+                                std::cout << "in ALIGNED" << std::endl;
+                                if (useGPS){
+                                    Optimizer::LocalBundleAdjustmentWithGPS(
+                                        mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),
+                                        num_FixedKF_BA, num_OptKF_BA, num_MPs_BA, num_edges_BA,
+                                        /*bLocalBA=*/false,    // you can choose local vs full-window
+                                        /*bLarge=*/bLarge,
+                                        /*bUseGPSMeas=*/true
+                                    );
+                                }else{
+                                    Optimizer::LocalInertialBAWithGlobalMeas(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, true, true, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                                }
+                            }
+                        else{
+                            if (!useGPS){
+                                std::cout << "performing LocalInertialBA" << std::endl;
+                                Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                            }else{
+                                std::cout << "performing LocalBundleAdjustment" << std::endl;
+                                Optimizer::LocalBundleAdjustment(mpCurrentKeyFrame,&mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA);
+                            }
+                        }
+                            
                         b_doneLBA = true;
                         /*std::cout << "+++++++++ " <<  mpTracker->GetGlobalFrameAlignmentState() << std::endl;
                         std::cout << "+++++++++ " <<  mpTracker->GetDataToAlign().size() << std::endl;*/
